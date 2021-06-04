@@ -1,6 +1,7 @@
 package com.atlassian.performance.tools.infrastructure.api.database
 
 import com.atlassian.performance.tools.infrastructure.DockerImage
+import com.atlassian.performance.tools.infrastructure.api.database.toxiproxy.Toxiproxy
 import com.atlassian.performance.tools.infrastructure.api.dataset.DatasetPackage
 import com.atlassian.performance.tools.infrastructure.api.os.Ubuntu
 import com.atlassian.performance.tools.ssh.api.SshConnection
@@ -15,7 +16,8 @@ import java.time.Instant
  */
 class MySqlDatabase(
     private val source: DatasetPackage,
-    private val maxConnections: Int
+    private val maxConnections: Int,
+    toxiproxyConfig: String? = null
 ) : Database {
     private val logger: Logger = LogManager.getLogger(this::class.java)
 
@@ -24,6 +26,8 @@ class MySqlDatabase(
         pullTimeout = Duration.ofMinutes(5)
     )
     private val ubuntu = Ubuntu()
+    private val toxiproxy = Toxiproxy(3306, 3307, toxiproxyConfig)
+    private val port = toxiproxy.dbPort()
 
     /**
      * Uses MySQL defaults.
@@ -35,25 +39,45 @@ class MySqlDatabase(
         maxConnections = 151
     )
 
+    constructor(
+        source: DatasetPackage,
+        toxiproxyConfig: String?
+    ) : this(
+        source = source,
+        maxConnections = 151,
+        toxiproxyConfig = toxiproxyConfig
+    )
+
+    constructor(
+        mySqlDatabase: MySqlDatabase,
+        toxiproxyConfig: String?
+    ) : this(
+        source = mySqlDatabase.source,
+        maxConnections = mySqlDatabase.maxConnections,
+        toxiproxyConfig = toxiproxyConfig
+    )
+
     override fun setup(ssh: SshConnection): String {
         val mysqlData = source.download(ssh)
         image.run(
             ssh = ssh,
-            parameters = "-p 3306:3306 -v `realpath $mysqlData`:/var/lib/mysql",
+            parameters = "-p $port:3306 -v `realpath $mysqlData`:/var/lib/mysql",
             arguments = "--skip-grant-tables --max_connections=$maxConnections"
         )
+        toxiproxy.setup(ssh)
         return mysqlData
     }
 
     override fun start(jira: URI, ssh: SshConnection) {
         waitForMysql(ssh)
-        ssh.execute("""mysql -h 127.0.0.1  -u root -e "UPDATE jiradb.propertystring SET propertyvalue = '$jira' WHERE id IN (select id from jiradb.propertyentry where property_key like '%baseurl%');" """)
+        ssh.execute("""mysql -h 127.0.0.1 -P $port -u root -e "UPDATE jiradb.propertystring SET propertyvalue = '$jira' WHERE id IN (select id from jiradb.propertyentry where property_key like '%baseurl%');" """)
+        toxiproxy.start(ssh)
     }
 
     private fun waitForMysql(ssh: SshConnection) {
         ubuntu.install(ssh, listOf("mysql-client"))
         val mysqlStart = Instant.now()
-        while (!ssh.safeExecute("mysql -h 127.0.0.1 -u root -e 'select 1;'").isSuccessful()) {
+        while (!ssh.safeExecute("mysql -h 127.0.0.1 -P $port -u root -e 'select 1;'").isSuccessful()) {
             if (Instant.now() > mysqlStart + Duration.ofMinutes(15)) {
                 throw RuntimeException("MySql didn't start in time")
             }

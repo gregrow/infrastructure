@@ -25,11 +25,18 @@ Dropping a requirement of a major version of a dependency is a new contract.
 
 ## [Unreleased]
 [Unreleased]: https://github.com/atlassian/infrastructure/compare/release-4.19.1...master
+### Removed
+- Remove `com.atlassian.performance.tools.infrastructure.dataset.ObsoleteHttpDatasetPackage`,
+`com.atlassian.performance.tools.infrastructure.dataset.HttpDatasetPackage` and the 3-arg
+constructor in `com.atlassian.performance.tools.infrastructure.api.dataset.HttpDatasetPackage`.
+Clean up after [JPERF-750].
+
+[JPERF-750]: https://ecosystem.atlassian.net/browse/JPERF-750
 
 ## [4.19.1] - 2022-04-04
 [4.19.1]: https://github.com/atlassian/infrastructure/compare/release-4.19.0...release-4.19.1
 ### Security
-- Remove `jira-soke-tests-eu` AWS S3 bucket reference
+- Remove `jira-soke-tests-eu` AWS S3 bucket reference. Fix [JPERF-750].
 
 [JPERF-750]: https://ecosystem.atlassian.net/browse/JPERF-750
 
